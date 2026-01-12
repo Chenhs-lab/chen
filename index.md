@@ -60,7 +60,7 @@ title: 📚 程式課程學習中心
         <p>機器學習導論與神經網路實作教學。</p>
         <span class="btn-start">開始學習</span>
     </a>
-    <a href="./_project/deep network designer project.md" class="card">
+    <a href="./project/deep network designer project.md" class="card">
         <h2> 報告內容</h2>
         <p>期末報告。</p>
         <span class="btn-start">開始學習</span>
