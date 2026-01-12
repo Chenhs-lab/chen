@@ -60,10 +60,15 @@ title: 📚 程式課程學習中心
         <p>機器學習導論與神經網路實作教學。</p>
         <span class="btn-start">開始學習</span>
     </a>
+    <a href="./_project/deep network designer project.md" class="card">
+        <h2> 報告內容</h2>
+        <p>期末報告。</p>
+        <span class="btn-start">開始學習</span>
+    </a>
 </div>
 
 ---
 
 ### 📢 最新更新
-- **2025-12-28**: 新增 AI 課程第二章「神經網路」。
+- **2026-01-12**: 新增 期末報告。
 - **2025-12-28**: 修正 MATLAB 側邊欄導覽連結。
