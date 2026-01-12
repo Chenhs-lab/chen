@@ -1,3 +1,7 @@
+---
+layout: course_layout
+title: "deep network designer project"
+---
 # 臺北市私立薇閣高級中學114學年度第1學期工程專題
 班級     二辛        	座號      40        	姓名    	陳泓碩
 ## 一、主題：
