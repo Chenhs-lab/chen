@@ -1,0 +1,208 @@
+import pygame
+import random
+import math
+import sys
+
+# --- 1. 基礎設定與初始化 ---
+pygame.init()
+WIDTH, HEIGHT = 640, 480
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("寶可夢：初代首戰復刻")
+clock = pygame.time.Clock()
+
+# 顏色與字體
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+GRAY = (200, 200, 200)
+try:
+    FONT = pygame.font.SysFont("microsoftjhenghei", 20)
+    BIG_FONT = pygame.font.SysFont("microsoftjhenghei", 30)
+except:
+    FONT = pygame.font.SysFont(None, 24)
+    BIG_FONT = pygame.font.SysFont(None, 36)
+
+# --- 2. 核心數據與公式 ---
+def calculate_damage(attacker, defender, move_power):
+    # 初代公式：(((2 * Level / 5 + 2) * Power * Atk / Def) / 50 + 2) * Modifier
+    is_crit = random.random() < 0.1
+    crit_mult = 2 if is_crit else 1
+    
+    # 擊中要害時無視階級變動
+    atk = attacker.base_atk if is_crit else attacker.get_atk()
+    p_def = defender.base_def if is_crit else defender.get_def()
+    
+    level_part = (2 * attacker.level) / 5 + 2
+    base_dmg = (level_part * move_power * atk / p_def) / 50 + 2
+    rand_mult = random.randint(217, 255) / 255
+    
+    final_dmg = math.floor(base_dmg * crit_mult * rand_mult)
+    return is_crit, final_dmg
+
+class Pokemon:
+    def __init__(self, name, base_stats, moves, is_player=True):
+        self.name = name
+        self.level = 5
+        self.iv = 15
+        # 能力值計算
+        self.max_hp = math.floor((base_stats[0]+self.iv)*2*5/100)+15
+        self.hp = self.max_hp
+        self.base_atk = math.floor((base_stats[1]+self.iv)*2*5/100)+5
+        self.base_def = math.floor((base_stats[2]+self.iv)*2*5/100)+5
+        self.spd = math.floor((base_stats[3]+self.iv)*2*5/100)+5
+        
+        self.moves = moves
+        self.atk_stage = 0
+        self.def_stage = 0
+        
+        # 載入圖片 (根據是玩家還是勁敵載入背影或正面)
+        suffix = "back" if is_player else "front"
+        try:
+            img = pygame.image.load(f"{name}_{suffix}.png").convert_alpha()
+            self.image = pygame.transform.scale(img, (180, 180) if is_player else (150, 150))
+        except:
+            self.image = pygame.Surface((150, 150))
+            self.image.fill((255, 0, 0) if name == "小火龍" else (0, 0, 255))
+
+    def get_atk(self):
+        mult = 2 / (2 + abs(self.atk_stage)) if self.atk_stage < 0 else (2 + self.atk_stage) / 2
+        return self.base_atk * mult
+
+    def get_def(self):
+        mult = 2 / (2 + abs(self.def_stage)) if self.def_stage < 0 else (2 + self.def_stage) / 2
+        return self.base_def * mult
+
+# --- 3. 戰鬥管理器 ---
+class BattleManager:
+    def __init__(self, player, rival):
+        self.player = player
+        self.rival = rival
+        self.msg_queue = []
+        self.current_msg = f"小茂派出了 {rival.name}！"
+        self.waiting_click = True
+        self.in_menu = False # 是否顯示招式選單
+        
+        self.flash_target = None
+        self.flash_timer = 0
+
+    def add_step(self, text, action=None):
+        self.msg_queue.append({"text": text, "action": action})
+
+    def start_turn(self, p_move_name):
+        self.in_menu = False
+        p, r = self.player, self.rival
+        r_move_name = random.choice(list(r.moves.keys()))
+        
+        # 決定順序
+        order = [(p, r, p_move_name, "玩家"), (r, p, r_move_name, "小茂")]
+        if r.spd > p.spd: order.reverse()
+
+        for attacker, defender, m_name, side in order:
+            if attacker.hp <= 0: continue
+            
+            self.add_step(f"{side}的 {attacker.name} 使用了 {m_name}！")
+            move = attacker.moves[m_name]
+            
+            if move["type"] == "damage":
+                is_crit, dmg = calculate_damage(attacker, defender, move["power"])
+                def dmg_act(d=defender, amt=dmg, c=is_crit):
+                    d.hp = max(0, d.hp - amt)
+                    self.flash_target = d
+                    self.flash_timer = 20
+                if is_crit: self.add_step("擊中要害！", action=dmg_act)
+                else: self.add_step("", action=dmg_act)
+            
+            elif m_name in ["叫聲", "搖尾巴"]:
+                def stat_act(d=defender, m=m_name):
+                    if m == "叫聲": d.atk_stage -= 1
+                    else: d.def_stage -= 1
+                self.add_step(f"{defender.name} 的能力下降了！", action=stat_act)
+
+            def check_faint(d=defender):
+                if d.hp <= 0: self.add_step(f"{d.name} 倒下了！")
+            self.add_step("", action=check_faint)
+
+    def next_step(self):
+        if self.msg_queue:
+            step = self.msg_queue.pop(0)
+            if step["text"]: self.current_msg = step["text"]
+            if step["action"]: step["action"]()
+        else:
+            if self.player.hp > 0 and self.rival.hp > 0:
+                self.in_menu = True
+                self.current_msg = "你要做什麼？"
+            else:
+                self.current_msg = "戰鬥結束！"
+
+# --- 4. 繪圖輔助 ---
+def draw_ui(manager):
+    screen.fill(WHITE)
+    # 畫寶可夢
+    if not (manager.flash_target == manager.rival and (manager.flash_timer // 4) % 2 == 0):
+        screen.blit(manager.rival.image, (400, 50))
+    if not (manager.flash_target == manager.player and (manager.flash_timer // 4) % 2 == 0):
+        screen.blit(manager.player.image, (80, 200))
+
+    # 畫血條面板 (簡化版)
+    pygame.draw.rect(screen, BLACK, (50, 50, 200, 50), 2)
+    screen.blit(FONT.render(f"{manager.rival.name} Lv5", True, BLACK), (60, 55))
+    pygame.draw.rect(screen, (0, 255, 0), (60, 80, 150 * (manager.rival.hp/manager.rival.max_hp), 10))
+
+    pygame.draw.rect(screen, BLACK, (380, 250, 200, 70), 2)
+    screen.blit(FONT.render(f"{manager.player.name} Lv5", True, BLACK), (390, 255))
+    pygame.draw.rect(screen, (0, 255, 0), (390, 280, 150 * (manager.player.hp/manager.player.max_hp), 10))
+    screen.blit(FONT.render(f"{manager.player.hp}/{manager.player.max_hp}", True, BLACK), (480, 295))
+
+    # 對話框
+    pygame.draw.rect(screen, BLACK, (0, 350, 640, 130))
+    pygame.draw.rect(screen, WHITE, (5, 355, 630, 120), 3)
+    
+    if manager.in_menu:
+        # 畫招式按鈕
+        for i, m_name in enumerate(manager.player.moves.keys()):
+            x, y = 350 + (i%2)*140, 370 + (i//2)*50
+            pygame.draw.rect(screen, WHITE, (x, y, 120, 40), 2)
+            screen.blit(FONT.render(m_name, True, WHITE), (x+10, y+10))
+    
+    screen.blit(FONT.render(manager.current_msg, True, WHITE), (30, 380))
+
+# --- 5. 主程式迴圈 ---
+# 初始數據
+pkmn_db = {
+    "小火龍": [39, 52, 43, 65, 50],
+    "傑尼龜": [44, 48, 65, 43, 50],
+    "妙蛙種子": [45, 49, 49, 45, 65]
+}
+moves_db = {
+    "抓": {"type": "damage", "power": 40},
+    "撞擊": {"type": "damage", "power": 35},
+    "叫聲": {"type": "status"},
+    "搖尾巴": {"type": "status"}
+}
+
+# 假設選擇小火龍
+p_pkmn = Pokemon("小火龍", pkmn_db["小火龍"], {"抓": moves_db["抓"], "叫聲": moves_db["叫聲"]}, is_player=True)
+r_pkmn = Pokemon("傑尼龜", pkmn_db["傑尼龜"], {"撞擊": moves_db["撞擊"], "搖尾巴": moves_db["搖尾巴"]}, is_player=False)
+manager = BattleManager(p_pkmn, r_pkmn)
+
+running = True
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT: running = False
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if manager.in_menu:
+                # 簡單按鈕判定
+                mx, my = event.pos
+                move_list = list(p_pkmn.moves.keys())
+                for i in range(len(move_list)):
+                    x, y = 350 + (i%2)*140, 370 + (i//2)*50
+                    if pygame.Rect(x, y, 120, 40).collidepoint(mx, my):
+                        manager.start_turn(move_list[i])
+            else:
+                manager.next_step()
+
+    if manager.flash_timer > 0: manager.flash_timer -= 1
+    draw_ui(manager)
+    pygame.display.flip()
+    clock.tick(60)
+
+pygame.quit()
